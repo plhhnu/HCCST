@@ -4,7 +4,7 @@ HCCST is a multimodal deep learning framework for spatial domain identification 
 
 ## Framework Overview
 
-https://github.com/plhhnu/HCCST/blob/main/Figure/HCCST.pdf
+![HCCST 模型架构图](./Figure/HCCST.pdf)
 
 The framework mainly includes five components:
 
@@ -173,21 +173,21 @@ The following parameters are shared across all datasets unless otherwise specifi
 
 ### Dataset-Specific Parameters
 
-| Dataset                                          | Annotation | Epochs | `lambda` | `refinement` | `radius` |
-| ------------------------------------------------ | ---------- | ------ | -------- | ------------ | -------- |
-| DLPFC                                            | Labeled    | 550    | 0.1      | `True`       | 12       |
-| Mouse Brain Serial Section 1 (Sagittal-Anterior) | Labeled    | 550    | 0.1      | `True`       | 50       |
-| Human Breast Cancer (Block A Section 1)          | Labeled    | 550    | 0.1      | `True`       | 12       |
-| Mouse Visual Cortex                              | Labeled    | 550    | 0.1      | `True`       | 40       |
-| Human Breast Cancer (DCIS)                       | Unlabeled  | 180    | 0.4      | `False`      | 12       |
-| Adult Mouse Brain (FFPE)                         | Unlabeled  | 180    | 0.4      | `False`      | 12       |
-| Human Intestine Cancer (FFPE)                    | Unlabeled  | 180    | 0.4      | `False`      | 4        |
+| Dataset                                          | Annotation | Epochs | `embedding_lambda` | `refinement` | `radius` |
+| ------------------------------------------------ | ---------- | ------ | ------------------ | ------------ | -------- |
+| DLPFC                                            | Labeled    | 550    | 0.1                | `True`       | 12       |
+| Mouse Brain Serial Section 1 (Sagittal-Anterior) | Labeled    | 550    | 0.1                | `True`       | 50       |
+| Human Breast Cancer (Block A Section 1)          | Labeled    | 550    | 0.1                | `True`       | 12       |
+| Mouse Visual Cortex                              | Labeled    | 550    | 0.1                | `True`       | 40       |
+| Human Breast Cancer (DCIS)                       | Unlabeled  | 180    | 0.4                | `False`      | 12       |
+| Adult Mouse Brain (FFPE)                         | Unlabeled  | 180    | 0.4                | `False`      | 12       |
+| Human Intestine Cancer (FFPE)                    | Unlabeled  | 180    | 0.4                | `False`      | 4        |
 
 ### Notes
 
 - `radius` controls the neighborhood size used for graph construction and should be adjusted according to the spatial scale and spot density of each dataset.
 - `refinement` is enabled for datasets with manual annotations and disabled for datasets without reliable reference boundaries.
-- For new datasets, we recommend starting from the default configuration and mainly tuning `radius`, `epochs`, and `lambda`.
+- For new datasets, we recommend starting from the default configuration and mainly tuning `radius`, `epochs`, and `embedding_lambda`.
 - By default, datasets with manual annotations are clustered using `mclust`, with the number of clusters set to the number of annotated regions. For datasets without manual annotations, `k`-means clustering is used by default, and spatial refinement is disabled to avoid introducing potential bias without reliable reference boundaries.
 
 ## Tutorial
