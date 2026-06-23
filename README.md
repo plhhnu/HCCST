@@ -4,7 +4,7 @@ HCCST is a multimodal deep learning framework for spatial domain identification 
 
 ## Framework Overview
 
-![HCCST 模型架构图](Figure/HCCST.pdf)
+![HCCST Framework](Figure/HCCST.pdf)
 
 The framework mainly includes five components:
 
