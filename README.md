@@ -3,7 +3,8 @@
 HCCST is a multimodal deep learning framework for spatial domain identification in spatial transcriptomics. It integrates gene expression profiles, spatial coordinates, and histological images to learn robust spot-level representations.
 
 ## Framework Overview
-![HCCST Framework](Figure/HCCST.png)
+![HCCST Framework] (Figure/HCCST.png)
+
 The framework mainly includes five components:
 
 - **Morphology-aware graph construction:** HCCST builds a spatial neighborhood graph from spot coordinates and reweights graph edges using ROI-level histological similarity.
