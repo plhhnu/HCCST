@@ -192,8 +192,8 @@ The following parameters are shared across all datasets unless otherwise specifi
 - By default, datasets with manual annotations are clustered using `mclust`, with the number of clusters set to the number of annotated regions. For datasets without manual annotations, `k`-means clustering is used by default, and spatial refinement is disabled to avoid introducing potential bias without reliable reference boundaries.
 
 ## Tutorial
-
-
+You can access the tutorial notebooks for each dataset here:
+https://github.com/plhhnu/HCCST/blob/main/Tutorial
 
 
 
