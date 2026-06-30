@@ -1,4 +1,4 @@
-# Histology-Guided Cross-Modal Co-Attention with Multi-Objective Joint Optimization for Spatial Clustering in Spatial Transcriptomics
+# HCCST: Histology-Guided Cross-Modal Co-Attention with Multi-Objective Joint Optimization for Spatial Domain Identification
 
 HCCST is a multimodal deep learning framework for spatial domain identification in spatial transcriptomics. It integrates gene expression profiles, spatial coordinates, and histological images to learn robust spot-level representations.
 
