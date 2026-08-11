@@ -382,7 +382,7 @@ class MultimodalLoss(nn.Module):
 
 class MultimodalIntegrationModel(nn.Module):
     def __init__(self, gene_input_dim, num_cell_types, gene_hidden_dim=512, gene_output_dim=64,
-                 image_output_dim=64, cross_attn_heads=8, config=None):
+                 image_output_dim=64, cross_attn_heads=8, config=None, morph_input_dim=None):
         super().__init__()
         # Only keep switches that define the current main experiment path.
         self.config = {
@@ -396,11 +396,19 @@ class MultimodalIntegrationModel(nn.Module):
             'enable_multi_scale_roi': True,
             'multi_scale_scales': (1.0, 2.0),
             'multi_scale_fuse_mode': 'mean',
+            'use_precomputed_morphology': False,
         }
         if config:
             self.config.update(config)
         self.gene_encoder = GeneExpressionEncoder(gene_input_dim, gene_hidden_dim, gene_output_dim)
         self.image_encoder = HistologyEncoder(output_dim=image_output_dim)
+        if morph_input_dim is not None:
+            self.morph_feature_projector = nn.Sequential(
+                nn.Linear(int(morph_input_dim), image_output_dim),
+                nn.LayerNorm(image_output_dim),
+                nn.GELU(),
+                nn.Dropout(0.1),
+            )
         self.gene_output_dim = gene_output_dim
         self.image_output_dim = image_output_dim
         self.gene_to_image_bridge = nn.Linear(gene_output_dim, image_output_dim)
@@ -423,6 +431,39 @@ class MultimodalIntegrationModel(nn.Module):
             if self.config.get('disable_contrastive', False)
             else SimpleCrossModalContrastiveLoss(self.embed_dim)
         )
+
+    def _prepare_precomputed_morphology(self, image_data, gene_features):
+        morph = torch.as_tensor(
+            image_data['morph_features'],
+            dtype=torch.float32,
+            device=gene_features.device,
+        )
+        if morph.ndim != 2 or morph.size(0) != gene_features.size(0):
+            raise ValueError(
+                "morph_features must have shape [n_spots, d_morph] "
+                f"with n_spots={gene_features.size(0)}, got {tuple(morph.shape)}"
+            )
+        projector = getattr(self, 'morph_feature_projector', None)
+        if projector is None:
+            if morph.size(1) != self.image_output_dim:
+                raise ValueError("morph_input_dim is required for precomputed morphology features")
+            return morph
+        return projector(morph)
+
+    def _fuse_precomputed_morphology(self, gene_features, image_features):
+        if self.config.get('disable_cross_attention', False):
+            fused_gene, fused_image = gene_features, image_features
+            fused_features = torch.cat(
+                [F.normalize(fused_gene, p=2, dim=1), F.normalize(fused_image, p=2, dim=1)],
+                dim=1,
+            )
+            return fused_features, fused_gene, fused_image, fused_gene, fused_image, {}
+        return self.cross_attention(
+            gene_features,
+            image_features=image_features,
+            image_tokens=None,
+        )
+
     def forward(self, gene_data, image_data, edge_index=None, edge_weight=None, pre_train=False):
         if pre_train:
             gene_features, gene_recon = self.gene_encoder(
@@ -444,6 +485,26 @@ class MultimodalIntegrationModel(nn.Module):
             )
             _, cell_logits = self.cell_predictor(fused_features)
             aux_stats = {}
+            return (
+                gene_features,
+                gene_enhanced,
+                image_enhanced,
+                fused_features,
+                fused_gene,
+                fused_image,
+                cell_logits,
+                aux_stats,
+            )
+        if (
+            self.config.get('use_precomputed_morphology', False)
+            and isinstance(image_data, dict)
+            and 'morph_features' in image_data
+        ):
+            image_features = self._prepare_precomputed_morphology(image_data, gene_features)
+            fused_features, gene_enhanced, image_enhanced, fused_gene, fused_image, aux_stats = (
+                self._fuse_precomputed_morphology(gene_features, image_features)
+            )
+            _, cell_logits = self.cell_predictor(fused_features)
             return (
                 gene_features,
                 gene_enhanced,
