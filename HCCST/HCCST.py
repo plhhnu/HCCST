@@ -85,8 +85,8 @@ class MultimodalHCCST:
         random_seed=42,
         alpha=8,
         beta=0.1,
-        gamma=0.1,
-        delta=0.7,
+        gamma=0.7,
+        delta=0.1,
         num_cell_types=7,
         image_size=224,
         patch_size=112,
@@ -100,7 +100,9 @@ class MultimodalHCCST:
         morphology_weight_clip_min=0.0,
         morphology_topk_keep=None,
         embedding_mode='late_fusion',
-        embedding_alpha=0.1
+        embedding_lambda=0.1,
+        simulated_data=False,
+        morphology_feature_key='morph_features',
     ):
         self.adata = adata.copy()
         self.device = device
@@ -127,7 +129,9 @@ class MultimodalHCCST:
         self.morphology_weight_clip_min = morphology_weight_clip_min
         self.morphology_topk_keep = morphology_topk_keep
         self.embedding_mode = embedding_mode
-        self.embedding_alpha = embedding_alpha
+        self.embedding_lambda = embedding_lambda
+        self.simulated_data = bool(simulated_data)
+        self.morphology_feature_key = morphology_feature_key
 
         fix_seed(self.random_seed)
 
@@ -156,10 +160,12 @@ class MultimodalHCCST:
         self.image_size = None
         self.image_data = image_data
         if image_data is not None:
-            self.process_image_data(image_data)
+            if not (self.simulated_data and self._set_precomputed_morphology(image_data)):
+                self.process_image_data(image_data)
 
         # Optionally reweight spatial edges with patch-level morphology similarity.
-        if self.use_morphology_graph and self.image_tensor is not None:
+        has_precomputed_morphology = self._get_morphology_matrix() is not None
+        if self.use_morphology_graph and (self.image_tensor is not None or has_precomputed_morphology):
             try:
                 self._build_morphology_aware_graph()
                 self.adj_key = 'mor_adj'
@@ -170,6 +176,46 @@ class MultimodalHCCST:
                 self.adj_key = 'adj'
                 self.adj_raw = self.adata.obsm[self.adj_key]
                 self._refresh_graph_state()
+
+    def _set_precomputed_morphology(self, image_data):
+        if not isinstance(image_data, dict):
+            return False
+        morph = image_data.get(self.morphology_feature_key)
+        if morph is None:
+            return False
+        if torch.is_tensor(morph):
+            morph = morph.detach().cpu().numpy()
+        morph = np.asarray(morph, dtype=np.float32)
+        if morph.ndim != 2 or morph.shape[0] != self.adata.n_obs:
+            raise ValueError(
+                "morph_features must have shape [n_spots, d_morph] "
+                f"with n_spots={self.adata.n_obs}, got {morph.shape}"
+            )
+        self.adata.obsm[self.morphology_feature_key] = morph
+        self.adata.uns['morphology_input_type'] = 'precomputed_feature_matrix'
+        return True
+
+    def _get_morphology_matrix(self):
+        if not self.simulated_data or self.morphology_feature_key not in self.adata.obsm:
+            return None
+        return np.asarray(self.adata.obsm[self.morphology_feature_key], dtype=np.float32)
+
+    def _make_model_image_data(self):
+        morph = self._get_morphology_matrix()
+        if morph is not None:
+            return {'morph_features': torch.as_tensor(morph, dtype=torch.float32, device=self.device)}
+        if self.image_tensor is None:
+            return None
+        H_img, W_img = self.image_tensor.shape[-2], self.image_tensor.shape[-1]
+        return {
+            'image': self.image_tensor,
+            'roi_boxes': make_roi_boxes_from_adata(
+                self.adata,
+                patch_size=self.patch_size,
+                image_size=(W_img, H_img),
+            ),
+            'image_size': (W_img, H_img),
+        }
 
     def _refresh_graph_state(self):
         """Refresh graph tensors from the active adjacency matrix."""
@@ -224,13 +270,15 @@ class MultimodalHCCST:
         """Build a morphology-aware adjacency by reweighting existing spatial edges."""
         if 'adj' not in self.adata.obsm:
             raise ValueError("adata.obsm['adj'] is required")
-        H_resized, W_resized = self.image_tensor.shape[-2], self.image_tensor.shape[-1]
-        roi_boxes = make_roi_boxes_from_adata(
-            self.adata,
-            patch_size=self.patch_size,
-            image_size=(W_resized, H_resized)
-        )
-        image_feature = self._extract_patch_morphology_features(roi_boxes)
+        image_feature = self._get_morphology_matrix()
+        if image_feature is None:
+            H_resized, W_resized = self.image_tensor.shape[-2], self.image_tensor.shape[-1]
+            roi_boxes = make_roi_boxes_from_adata(
+                self.adata,
+                patch_size=self.patch_size,
+                image_size=(W_resized, H_resized)
+            )
+            image_feature = self._extract_patch_morphology_features(roi_boxes)
         n_comp = int(min(self.morphology_pca_components, image_feature.shape[0], image_feature.shape[1]))
         n_comp = max(2, n_comp)
         image_feature_pca = PCA(
@@ -276,12 +324,10 @@ class MultimodalHCCST:
             'mean_weight': float(mor_adj[mor_adj > 0].mean()) if np.count_nonzero(mor_adj) > 0 else 0.0,
             'topk_keep': None if self.morphology_topk_keep is None else int(self.morphology_topk_keep),
         }
-        print(f"Morphology-aware graph constructed using edge weights with PCA dim={n_comp}.")
-
     def _select_embedding_for_clustering(self):
         """Select and cache the embedding used by downstream clustering."""
         mode = str(self.embedding_mode).lower()
-        alpha = float(self.embedding_alpha)
+        embedding_lambda = float(self.embedding_lambda)
         if mode == 'gene':
             key = 'gene_enhanced_l2norm'
             emb = self.adata.obsm[key]
@@ -293,8 +339,8 @@ class MultimodalHCCST:
             emb = self.adata.obsm[key]
         elif mode == 'late_fusion':
             # Late fusion keeps the clustering input stable while allowing image contribution tuning.
-            key = f'late_fusion_alpha_{alpha:g}'
-            emb = self.adata.obsm['gene_enhanced_l2norm'] + alpha * self.adata.obsm['image_enhanced_l2norm']
+            key = f'late_fusion_embedding_lambda_{embedding_lambda:g}'
+            emb = self.adata.obsm['gene_enhanced_l2norm'] + embedding_lambda * self.adata.obsm['image_enhanced_l2norm']
             norm = np.linalg.norm(emb, axis=1, keepdims=True)
             norm[norm == 0] = 1.0
             emb = emb / norm
@@ -303,9 +349,8 @@ class MultimodalHCCST:
             raise ValueError(f"Unsupported embedding_mode: {self.embedding_mode}")
         self.adata.obsm['emb'] = emb.astype(np.float32)
         self.adata.uns['embedding_mode'] = mode
-        self.adata.uns['embedding_alpha'] = alpha
+        self.adata.uns['embedding_lambda'] = embedding_lambda
         self.adata.uns['emb_key'] = key
-        print(f"Clustering embedding set to '{key}'.")
         return key
 
     def process_image_data(self, image):
@@ -468,6 +513,11 @@ class MultimodalHCCST:
         return record
 
     def train_multimodal(self):
+        morphology_matrix = self._get_morphology_matrix()
+        morphology_input_dim = None if morphology_matrix is None else int(morphology_matrix.shape[1])
+        model_config = dict(self.model_config)
+        if morphology_input_dim is not None:
+            model_config['use_precomputed_morphology'] = True
         self.multimodal_model = MultimodalIntegrationModel(
             gene_input_dim=self.dim_input,
             num_cell_types=self.num_cell_types,
@@ -476,7 +526,8 @@ class MultimodalHCCST:
             gene_output_dim=self.dim_output,
             image_output_dim=self.dim_output,
             cross_attn_heads=8,
-            config=self.model_config
+            config=model_config,
+            morph_input_dim=morphology_input_dim,
         ).to(self.device)
 
         if (
@@ -514,19 +565,26 @@ class MultimodalHCCST:
             consistency_side="gene",
         )
 
+        parameter_groups = [
+            {
+                "params": self.multimodal_model.gene_encoder.parameters(),
+                "lr": self.lr_gene,
+                "weight_decay": self.weight_decay,
+            },
+            {
+                "params": self.multimodal_model.cross_attention.parameters(),
+                "lr": self.lr_gene,
+                "weight_decay": self.weight_decay,
+            },
+        ]
+        if getattr(self.multimodal_model, 'morph_feature_projector', None) is not None:
+            parameter_groups.append({
+                "params": self.multimodal_model.morph_feature_projector.parameters(),
+                "lr": self.lr_gene,
+                "weight_decay": self.weight_decay,
+            })
         self.optimizer = torch.optim.AdamW(
-            [
-                {
-                    "params": self.multimodal_model.gene_encoder.parameters(),
-                    "lr": self.lr_gene,
-                    "weight_decay": self.weight_decay,
-                },
-                {
-                    "params": self.multimodal_model.cross_attention.parameters(),
-                    "lr": self.lr_gene,
-                    "weight_decay": self.weight_decay,
-                },
-            ],
+            parameter_groups,
             betas=(0.9, 0.999),
             eps=1e-8
         )
@@ -544,25 +602,14 @@ class MultimodalHCCST:
             self.scaler = GradScaler()
 
         edge_index, edge_weight = self.edge_index, self.edge_weight
-        image_data = None
-        if self.image_tensor is not None:
-            H_img, W_img = self.image_tensor.shape[-2], self.image_tensor.shape[-1]
-            image_data = {
-                "image": self.image_tensor,
-                "roi_boxes": make_roi_boxes_from_adata(
-                    self.adata,
-                    patch_size=self.patch_size,
-                    image_size=(W_img, H_img),
-                ),
-                "image_size": (W_img, H_img),
-            }
+        image_data = self._make_model_image_data()
 
-        print('Begin to train multimodal model...')
         training_history = []
         self.training_history = pd.DataFrame()
         pretrain_epochs = int(self.epochs * float(self.pretrain_ratio))
+        pretrain_epochs = max(0, min(self.epochs, pretrain_epochs))
 
-        for epoch in tqdm(range(self.epochs)):
+        def _run_epoch(epoch, stage):
             self.multimodal_model.train()
             if (
                 hasattr(self.multimodal_model, 'image_encoder')
@@ -574,7 +621,6 @@ class MultimodalHCCST:
                         m.eval()
 
             self.optimizer.zero_grad(set_to_none=True)
-            stage = 'pretrain' if epoch < pretrain_epochs else 'joint'
 
             if amp_enabled:
                 with autocast():
@@ -597,19 +643,15 @@ class MultimodalHCCST:
             else:
                 self.scheduler.step()
 
-            training_history.append(self._build_history_record(epoch, stage, loss, loss_dict))
+            return self._build_history_record(epoch, stage, loss, loss_dict)
 
-            if (epoch + 1) % 100 == 0:
-                current_lr = self.optimizer.param_groups[0]['lr']
-                print(f"Epoch {epoch+1}/{self.epochs}, Loss: {loss.item():.4f}, LR: {current_lr:.6f}")
-                if stage == 'joint':
-                    for k, v in loss_dict.items():
-                        try:
-                            print(f"{k}: {v.item():.4f}")
-                        except Exception:
-                            print(f"{k}: {v}")
+        if pretrain_epochs > 0:
+            for epoch in tqdm(range(pretrain_epochs), desc="Gene pretraining"):
+                training_history.append(_run_epoch(epoch, 'pretrain'))
 
-        print("Multimodal training completed!")
+        if pretrain_epochs < self.epochs:
+            for epoch in tqdm(range(pretrain_epochs, self.epochs), desc="Joint training"):
+                training_history.append(_run_epoch(epoch, 'joint'))
 
         with torch.no_grad():
             self.multimodal_model.eval()
@@ -631,18 +673,6 @@ class MultimodalHCCST:
             self._select_embedding_for_clustering()
 
             self.training_history = pd.DataFrame(training_history)
-            print("L2 Normalization Statistics:")
-            print(f"Original fused_features - Mean norm: {torch.norm(fused_features, p=2, dim=1).mean().item():.4f}")
-            print(
-                "Normalized fused_features - Mean norm: "
-                f"{torch.norm(fused_features_normalized, p=2, dim=1).mean().item():.4f}"
-            )
-            print(f"Original range: [{fused_features.min().item():.4f}, {fused_features.max().item():.4f}]")
-            print(
-                "Normalized range: "
-                f"[{fused_features_normalized.min().item():.4f}, "
-                f"{fused_features_normalized.max().item():.4f}]"
-            )
             return self.adata
 
     def predict_cell_types(self, adata=None):
@@ -723,17 +753,9 @@ class MultimodalHCCST:
             if len(true_labels) > 0:
                 ari = metrics.adjusted_rand_score(true_labels, pred_labels_sup)
                 nmi = metrics.normalized_mutual_info_score(true_labels, pred_labels_sup)
-                hs = metrics.homogeneity_score(true_labels, pred_labels_sup)
-                true_codes = pd.Categorical(true_labels).codes
-                pred_codes = pd.Categorical(pred_labels_sup).codes
-                cont = pd.crosstab(pd.Series(true_codes), pd.Series(pred_codes)).to_numpy()
-                n = cont.sum()
-                purity = cont.max(axis=0).sum() / n if n > 0 else 0.0
-                metrics_dict.update({'ARI': ari, 'NMI': nmi, 'HS': hs, 'Purity': purity})
+                metrics_dict.update({'ARI': ari, 'NMI': nmi})
                 adata.uns['ari'] = ari
                 adata.uns['nmi'] = nmi
-                adata.uns['hs'] = hs
-                adata.uns['purity'] = purity
         elif eval_mode == 'unsupervised':
             if X_eval is None:
                 adata.uns['metrics'] = metrics_dict
