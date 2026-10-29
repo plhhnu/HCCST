@@ -163,8 +163,8 @@ The following parameters are shared across all datasets unless otherwise specifi
 
 | Parameter        | Description                                       | Value         |
 | ---------------- | ------------------------------------------------- | ------------- |
-| `gamma`          | Weight of the consistency loss                    | 0.1           |
-| `delta`          | Weight of the prototype regularization loss       | 0.7           |
+| `gamma`          | Weight of the consistency loss                    | 0.7           |
+| `delta`          | Weight of the prototype regularization loss       | 0.1           |
 | `lr_gene`        | Learning rate for the gene encoder                | 5e-4          |
 | `pretrain_ratio` | Ratio of pretraining epochs before joint training | 0.3           |
 | `weight_decay`   | Weight decay for regularization                   | 5e-4          |
