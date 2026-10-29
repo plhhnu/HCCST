@@ -15,7 +15,7 @@ The framework mainly includes five components:
 
 The learned embeddings can be used for spatial clustering, trajectory inference, marker gene visualization, and pseudotime analysis.
 ## Data availability
-All datasets used in this study are publicly available from the original studies or official data repositories. The DLPFC dataset was obtained from the spatialLIBD resource (https://research.libd.org/spatialLIBD/). The Human Breast Cancer (Block A Section 1), Mouse Brain Serial Section 1 (Sagittal-Anterior), Human Breast Cancer (DCIS), and Adult Mouse Brain (FFPE) datasets were obtained from the 10x Genomics public datasets portal: https://www.10xgenomics.com/datasets/human-breast-cancer-block-a-section-1-1-standard-1-0-0, https://www.10xgenomics.com/datasets/mouse-brain-serial-section-1-sagittal-anterior-1-standard-1-0-0, https://www.10xgenomics.com/datasets/human-breast-cancer-ductal-carcinoma-in-situ-invasive-carcinoma-ffpe-1-standard-1-3-0, and https://www.10xgenomics.com/datasets/adult-mouse-brain-ffpe-1-standard-1-3-0, respectively. The mouse primary visual cortex STARmap dataset and the Human Intestine Cancer (FFPE) dataset used in this study were obtained from the MuCST repository and its associated Zenodo record (https://github.com/xkmaxidian/MuCST; https://doi.org/10.5281/zenodo.10627683). The original Human Intestine Cancer (FFPE) Visium dataset is also publicly available from 10x Genomics (https://www.10xgenomics.com/datasets/human-intestine-cancer-1-standard).
+All datasets used in this study are publicly available from the original studies or official data repositories. The DLPFC dataset was obtained from the spatialLIBD resource (https://research.libd.org/spatialLIBD/). The Human Breast Cancer (Block A Section 1), Mouse Brain Serial Section 1 (Sagittal-Anterior), Human Breast Cancer (DCIS), and Adult Mouse Brain (FFPE) datasets were obtained from the 10x Genomics public datasets portal: https://www.10xgenomics.com/datasets/human-breast-cancer-block-a-section-1-1-standard-1-0-0, https://www.10xgenomics.com/datasets/mouse-brain-serial-section-1-sagittal-anterior-1-standard-1-0-0, https://www.10xgenomics.com/datasets/human-breast-cancer-ductal-carcinoma-in-situ-invasive-carcinoma-ffpe-1-standard-1-3-0, and https://www.10xgenomics.com/datasets/adult-mouse-brain-ffpe-1-standard-1-3-0, respectively. The mouse primary visual cortex STARmap dataset and the Human Intestine A1 dataset used in this study were obtained from the MuCST repository and its associated Zenodo record (https://github.com/xkmaxidian/MuCST; https://doi.org/10.5281/zenodo.10627683). The original Human Intestine A1 dataset is also publicly available from 10x Genomics (https://www.10xgenomics.com/datasets/human-intestine-cancer-1-standard).
 
 ## Installation
 
@@ -182,7 +182,7 @@ The following parameters are shared across all datasets unless otherwise specifi
 | Mouse Visual Cortex                              | Labeled    | 550    | 0.1                | `True`       | 40       |
 | Human Breast Cancer (DCIS)                       | Unlabeled  | 180    | 0.4                | `False`      | 12       |
 | Adult Mouse Brain (FFPE)                         | Unlabeled  | 180    | 0.4                | `False`      | 12       |
-| Human Intestine Cancer (FFPE)                    | Unlabeled  | 180    | 0.4                | `False`      | 4        |
+| Human Intestine A1                               | Unlabeled  | 180    | 0.4                | `False`      | 4        |
 
 ### Notes
 
